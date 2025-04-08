@@ -1,0 +1,396 @@
+/**
+ * Task Scheduler Service
+ * Provides job scheduling functionality for the MCP server
+ */
+
+const cron = require('node-cron');
+const EventEmitter = require('events');
+
+class TaskSchedulerService extends EventEmitter {
+  constructor(options = {}) {
+    super();
+    
+    this.options = {
+      maxTasks: 100,
+      ...options
+    };
+    
+    // Store for scheduled tasks
+    this.tasks = new Map();
+    
+    // Task stats
+    this.stats = {
+      scheduled: 0,
+      running: 0,
+      completed: 0,
+      failed: 0,
+      cancelled: 0
+    };
+  }
+  
+  /**
+   * Schedule a task to run on a cron schedule
+   * @param {string} taskId - Unique ID for the task
+   * @param {string} schedule - Cron schedule expression
+   * @param {function|object} task - Task function or object with run method
+   * @param {object} options - Task options
+   * @returns {object} - Operation result
+   */
+  scheduleTask(taskId, schedule, task, options = {}) {
+    try {
+      // Check if task ID already exists
+      if (this.tasks.has(taskId)) {
+        return {
+          success: false,
+          error: 'Task ID already exists'
+        };
+      }
+      
+      // Check task limit
+      if (this.tasks.size >= this.options.maxTasks) {
+        return {
+          success: false,
+          error: 'Maximum task limit reached'
+        };
+      }
+      
+      // Validate cron schedule
+      if (!cron.validate(schedule)) {
+        return {
+          success: false,
+          error: 'Invalid cron schedule expression'
+        };
+      }
+      
+      // Create task object
+      const taskObj = {
+        id: taskId,
+        schedule,
+        task: typeof task === 'function' ? task : task.run,
+        options: {
+          timezone: options.timezone || 'UTC',
+          runOnStart: options.runOnStart || false,
+          ...options
+        },
+        status: 'scheduled',
+        created: new Date(),
+        lastRun: null,
+        nextRun: null,
+        stats: {
+          runs: 0,
+          errors: 0
+        }
+      };
+      
+      // Schedule the task
+      const cronTask = cron.schedule(schedule, async () => {
+        await this.runTask(taskId);
+      }, {
+        timezone: taskObj.options.timezone,
+        scheduled: true
+      });
+      
+      // Store task object with cron task
+      taskObj.cronTask = cronTask;
+      this.tasks.set(taskId, taskObj);
+      
+      // Update stats
+      this.stats.scheduled++;
+      
+      // Calculate next run time
+      taskObj.nextRun = this.calculateNextRun(schedule, taskObj.options.timezone);
+      
+      // Emit event
+      this.emit('task:scheduled', { taskId, schedule });
+      
+      // Run immediately if configured
+      if (taskObj.options.runOnStart) {
+        // Run asynchronously to not block
+        setImmediate(() => this.runTask(taskId));
+      }
+      
+      return {
+        success: true,
+        taskId,
+        nextRun: taskObj.nextRun
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+  
+  /**
+   * Run a scheduled task immediately
+   * @param {string} taskId - ID of the task to run
+   * @returns {Promise<object>} - Operation result
+   */
+  async runTask(taskId) {
+    try {
+      // Check if task exists
+      if (!this.tasks.has(taskId)) {
+        return {
+          success: false,
+          error: 'Task not found'
+        };
+      }
+      
+      const taskObj = this.tasks.get(taskId);
+      
+      // Update status
+      taskObj.status = 'running';
+      taskObj.lastRun = new Date();
+      this.stats.running++;
+      
+      // Emit event
+      this.emit('task:running', { taskId });
+      
+      try {
+        // Run the task
+        const result = await Promise.resolve(taskObj.task());
+        
+        // Update task stats
+        taskObj.stats.runs++;
+        taskObj.status = 'completed';
+        taskObj.lastResult = result;
+        
+        // Update service stats
+        this.stats.running--;
+        this.stats.completed++;
+        
+        // Calculate next run time
+        taskObj.nextRun = this.calculateNextRun(taskObj.schedule, taskObj.options.timezone);
+        
+        // Emit event
+        this.emit('task:completed', { taskId, result });
+        
+        return {
+          success: true,
+          taskId,
+          result
+        };
+      } catch (error) {
+        // Update task stats
+        taskObj.stats.errors++;
+        taskObj.status = 'failed';
+        taskObj.lastError = error.message;
+        
+        // Update service stats
+        this.stats.running--;
+        this.stats.failed++;
+        
+        // Calculate next run time
+        taskObj.nextRun = this.calculateNextRun(taskObj.schedule, taskObj.options.timezone);
+        
+        // Emit event
+        this.emit('task:failed', { taskId, error: error.message });
+        
+        return {
+          success: false,
+          taskId,
+          error: error.message
+        };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+  
+  /**
+   * Calculate the next run time for a cron schedule
+   * @param {string} schedule - Cron schedule expression
+   * @param {string} timezone - Timezone for calculation
+   * @returns {Date} - Next run time
+   * @private
+   */
+  calculateNextRun(schedule, timezone = 'UTC') {
+    try {
+      const task = cron.schedule(schedule, () => {}, {
+        timezone,
+        scheduled: false
+      });
+      
+      // Get next run date
+      const nextDate = task.nextDate();
+      
+      // Clean up the temporary task
+      task.stop();
+      
+      return nextDate.toDate();
+    } catch (error) {
+      // Return current date on error
+      return new Date();
+    }
+  }
+  
+  /**
+   * Cancel a scheduled task
+   * @param {string} taskId - ID of the task to cancel
+   * @returns {object} - Operation result
+   */
+  cancelTask(taskId) {
+    try {
+      // Check if task exists
+      if (!this.tasks.has(taskId)) {
+        return {
+          success: false,
+          error: 'Task not found'
+        };
+      }
+      
+      const taskObj = this.tasks.get(taskId);
+      
+      // Stop the cron task
+      taskObj.cronTask.stop();
+      
+      // Update task status
+      taskObj.status = 'cancelled';
+      
+      // Update stats
+      this.stats.cancelled++;
+      
+      // Emit event
+      this.emit('task:cancelled', { taskId });
+      
+      return {
+        success: true,
+        taskId
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+  
+  /**
+   * Delete a task
+   * @param {string} taskId - ID of the task to delete
+   * @returns {object} - Operation result
+   */
+  deleteTask(taskId) {
+    try {
+      // Check if task exists
+      if (!this.tasks.has(taskId)) {
+        return {
+          success: false,
+          error: 'Task not found'
+        };
+      }
+      
+      const taskObj = this.tasks.get(taskId);
+      
+      // Stop the cron task
+      taskObj.cronTask.stop();
+      
+      // Remove from tasks map
+      this.tasks.delete(taskId);
+      
+      // Emit event
+      this.emit('task:deleted', { taskId });
+      
+      return {
+        success: true,
+        taskId
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+  
+  /**
+   * Get information about a specific task
+   * @param {string} taskId - ID of the task
+   * @returns {object} - Task information
+   */
+  getTaskInfo(taskId) {
+    try {
+      // Check if task exists
+      if (!this.tasks.has(taskId)) {
+        return {
+          success: false,
+          error: 'Task not found'
+        };
+      }
+      
+      const taskObj = this.tasks.get(taskId);
+      
+      // Return task info (excluding the task function and cron instance)
+      return {
+        success: true,
+        task: {
+          id: taskObj.id,
+          schedule: taskObj.schedule,
+          status: taskObj.status,
+          created: taskObj.created,
+          lastRun: taskObj.lastRun,
+          nextRun: taskObj.nextRun,
+          options: taskObj.options,
+          stats: taskObj.stats
+        }
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+  
+  /**
+   * Get all scheduled tasks
+   * @returns {object} - List of tasks
+   */
+  listTasks() {
+    try {
+      const taskList = [];
+      
+      // Convert tasks map to array of task info objects
+      for (const [taskId, taskObj] of this.tasks.entries()) {
+        taskList.push({
+          id: taskObj.id,
+          schedule: taskObj.schedule,
+          status: taskObj.status,
+          created: taskObj.created,
+          lastRun: taskObj.lastRun,
+          nextRun: taskObj.nextRun,
+          options: taskObj.options,
+          stats: taskObj.stats
+        });
+      }
+      
+      return {
+        success: true,
+        tasks: taskList
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+  
+  /**
+   * Get scheduler statistics
+   * @returns {object} - Service stats
+   */
+  getStats() {
+    return {
+      ...this.stats,
+      taskCount: this.tasks.size,
+      maxTasks: this.options.maxTasks
+    };
+  }
+}
+
+module.exports = { TaskSchedulerService };
