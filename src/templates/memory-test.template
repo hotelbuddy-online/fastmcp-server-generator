@@ -1,0 +1,83 @@
+/**
+ * Tests for Memory Service
+ */
+
+const { MemoryService } = require('../services/memory-service');
+
+describe('Memory Service', () => {
+  let memoryService;
+  
+  beforeEach(() => {
+    // Create a new memory service for each test
+    memoryService = new MemoryService();
+  });
+  
+  it('should store and retrieve data correctly', () => {
+    const key = 'test-key';
+    const data = { test: 'value', number: 42 };
+    
+    // Store data
+    const storeResult = memoryService.storeData(key, data);
+    expect(storeResult.success).toBe(true);
+    
+    // Retrieve data
+    const retrieveResult = memoryService.retrieveData(key);
+    
+    expect(retrieveResult.success).toBe(true);
+    expect(retrieveResult.data).toEqual(data);
+  });
+  
+  it('should return error when key not found', () => {
+    const key = 'non-existent-key';
+    
+    const retrieveResult = memoryService.retrieveData(key);
+    
+    expect(retrieveResult.success).toBe(false);
+    expect(retrieveResult.error).toBe('Key not found');
+  });
+  
+  it('should delete data correctly', () => {
+    const key = 'delete-test-key';
+    const data = 'test-data';
+    
+    // Store data
+    memoryService.storeData(key, data);
+    
+    // Delete data
+    const deleteResult = memoryService.deleteData(key);
+    expect(deleteResult.success).toBe(true);
+    
+    // Try to retrieve deleted data
+    const retrieveResult = memoryService.retrieveData(key);
+    expect(retrieveResult.success).toBe(false);
+  });
+  
+  it('should clear all data correctly', () => {
+    // Store multiple items
+    memoryService.storeData('key1', 'value1');
+    memoryService.storeData('key2', 'value2');
+    
+    // Clear all data
+    const clearResult = memoryService.clearAll();
+    expect(clearResult.success).toBe(true);
+    
+    // Try to retrieve cleared data
+    expect(memoryService.retrieveData('key1').success).toBe(false);
+    expect(memoryService.retrieveData('key2').success).toBe(false);
+  });
+  
+  it('should provide stats correctly', () => {
+    // Store and retrieve to generate stats
+    memoryService.storeData('stat-key', 'stat-value');
+    memoryService.retrieveData('stat-key');
+    memoryService.retrieveData('non-existent');
+    
+    const stats = memoryService.getStats();
+    
+    expect(stats).toBeDefined();
+    expect(stats.sets).toBe(1);
+    expect(stats.gets).toBe(2);
+    expect(stats.hits).toBe(1);
+    expect(stats.misses).toBe(1);
+  });
+});
