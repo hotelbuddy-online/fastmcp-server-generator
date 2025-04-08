@@ -1,0 +1,134 @@
+/**
+ * Tests for Filesystem Service
+ */
+
+const fs = require('fs-extra');
+const path = require('path');
+const { FilesystemService } = require('../services/filesystem-service');
+
+describe('Filesystem Service', () => {
+  let filesystemService;
+  const testDir = './test-data';
+  
+  beforeEach(async () => {
+    // Create a new filesystem service with test directory for each test
+    filesystemService = new FilesystemService({ rootDir: testDir });
+    
+    // Ensure test directory exists and is empty
+    await fs.ensureDir(testDir);
+    await fs.emptyDir(testDir);
+  });
+  
+  afterEach(async () => {
+    // Clean up test directory after each test
+    try {
+      await fs.remove(testDir);
+    } catch (error) {
+      console.error(`Error cleaning up: ${error.message}`);
+    }
+  });
+  
+  it('should write and read files correctly', async () => {
+    const testFilePath = 'test-file.txt';
+    const testContent = 'This is test content';
+    
+    // Write file
+    const writeResult = await filesystemService.writeFile(testFilePath, testContent);
+    expect(writeResult.success).toBe(true);
+    
+    // Read file
+    const readResult = await filesystemService.readFile(testFilePath, { encoding: 'utf8' });
+    
+    expect(readResult.success).toBe(true);
+    expect(readResult.data).toBe(testContent);
+  });
+  
+  it('should handle JSON data correctly', async () => {
+    const testFilePath = 'test-data.json';
+    const testData = { test: 'value', number: 42, nested: { key: 'value' } };
+    
+    // Write JSON
+    const writeResult = await filesystemService.writeFile(
+      testFilePath, 
+      JSON.stringify(testData)
+    );
+    expect(writeResult.success).toBe(true);
+    
+    // Read JSON
+    const readResult = await filesystemService.readFile(testFilePath, { encoding: 'utf8' });
+    
+    expect(readResult.success).toBe(true);
+    expect(JSON.parse(readResult.data)).toEqual(testData);
+  });
+  
+  it('should delete files correctly', async () => {
+    const testFilePath = 'file-to-delete.txt';
+    
+    // Create a file
+    await filesystemService.writeFile(testFilePath, 'Delete me');
+    
+    // Delete the file
+    const deleteResult = await filesystemService.deleteFile(testFilePath);
+    expect(deleteResult.success).toBe(true);
+    
+    // Verify file is deleted
+    const readResult = await filesystemService.readFile(testFilePath);
+    expect(readResult.success).toBe(false);
+  });
+  
+  it('should list files correctly', async () => {
+    // Create multiple files
+    await filesystemService.writeFile('file1.txt', 'Content 1');
+    await filesystemService.writeFile('file2.txt', 'Content 2');
+    await filesystemService.writeFile('subdir/file3.txt', 'Content 3');
+    
+    // List root directory
+    const listResult = await filesystemService.listFiles();
+    
+    expect(listResult.success).toBe(true);
+    expect(listResult.files.length).toBe(3); // 2 files and 1 directory
+    
+    // Check for files and directory
+    const fileNames = listResult.files.map(f => f.name);
+    expect(fileNames).toContain('file1.txt');
+    expect(fileNames).toContain('file2.txt');
+    expect(fileNames).toContain('subdir');
+    
+    // Verify directory is marked correctly
+    const subdir = listResult.files.find(f => f.name === 'subdir');
+    expect(subdir.isDirectory).toBe(true);
+  });
+  
+  it('should get file stats correctly', async () => {
+    const testFilePath = 'stat-test.txt';
+    const testContent = 'This content has a specific length for testing';
+    
+    // Create a file
+    await filesystemService.writeFile(testFilePath, testContent);
+    
+    // Get file stats
+    const statsResult = await filesystemService.getFileStats(testFilePath);
+    
+    expect(statsResult.success).toBe(true);
+    expect(statsResult.stats.size).toBe(testContent.length);
+    expect(statsResult.stats.isFile).toBe(true);
+    expect(statsResult.stats.isDirectory).toBe(false);
+  });
+  
+  it('should prevent path traversal attacks', async () => {
+    // Try to write outside root directory
+    const traversalPath = '../outside-root.txt';
+    const writeResult = await filesystemService.writeFile(traversalPath, 'This should not work');
+    
+    // Write should succeed but file should be inside root
+    expect(writeResult.success).toBe(true);
+    
+    // The file should actually be at 'test-data/outside-root.txt' not '../outside-root.txt'
+    const exists = await fs.pathExists(path.join(process.cwd(), '../outside-root.txt'));
+    expect(exists).toBe(false);
+    
+    const normalizedPath = path.join(testDir, 'outside-root.txt');
+    const safeExists = await fs.pathExists(normalizedPath);
+    expect(safeExists).toBe(true);
+  });
+});
