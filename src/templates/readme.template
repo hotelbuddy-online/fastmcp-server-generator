@@ -1,0 +1,42 @@
+# {{SERVER_NAME}}
+
+{{SERVER_DESCRIPTION}} built with FastMCP.
+
+## Features
+
+{{FEATURES_LIST}}
+
+## Installation
+
+```bash
+# Install dependencies
+npm install
+
+# Copy environment config
+cp .env.example .env
+```
+
+## Usage
+
+```bash
+# Start the server
+npm start
+
+# Start with nodemon for development
+npm run dev
+
+# Run tests
+npm test
+```
+
+The server will be available at http://localhost:{{SERVER_PORT}}
+
+{{DOCKER_SECTION}}
+
+## Configuration
+
+Configuration is managed through environment variables. See the `.env.example` file for available options.
+
+## License
+
+MIT
