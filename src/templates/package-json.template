@@ -1,0 +1,18 @@
+{
+  "name": "{{SERVER_NAME}}",
+  "version": "1.0.0",
+  "description": "{{SERVER_DESCRIPTION}}",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    {{DEPENDENCIES}}
+  },
+  "devDependencies": {
+    "jest": "^29.5.0",
+    "nodemon": "^2.0.22"
+  }
+}
