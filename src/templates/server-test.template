@@ -1,0 +1,72 @@
+/**
+ * Tests for {{SERVER_NAME}}
+ */
+
+const fastmcp = require('fastmcp');
+
+const MCPServer = require('../index').MCPServer;
+
+describe('MCP Server', () => {
+  let server;
+  
+  beforeEach(() => {
+    // Create a new server instance for each test
+    server = new MCPServer();
+  });
+  
+  afterEach(async () => {
+    // Cleanup after each test
+    if (server) {
+      await server.stop();
+    }
+  });
+  
+  it('should initialize correctly', async () => {
+    await server.initialize();
+    expect(server.server).toBeDefined();
+  });
+  
+  it('should start and stop correctly', async () => {
+    await server.initialize();
+    await server.start();
+    
+    const address = server.server.getAddress();
+    expect(address).toBeDefined();
+    expect(address.port).toBeDefined();
+    
+    await server.stop();
+  });
+  
+  it('should register all required services', async () => {
+    await server.initialize();
+    
+    // Check for specific services based on configuration
+    // These will depend on the actual server implementation
+    const services = server.server.getServices();
+    expect(services).toBeDefined();
+  });
+  
+  it('should respond to the status command', async () => {
+    await server.initialize();
+    await server.start();
+    
+    // Create a test client
+    const client = new fastmcp.Client({
+      host: 'localhost',
+      port: server.server.getAddress().port
+    });
+    
+    await client.connect();
+    
+    try {
+      // Test the status command
+      const result = await client.execute('status');
+      
+      expect(result).toBeDefined();
+      expect(result.status).toBe('ok');
+    } finally {
+      // Disconnect client
+      await client.disconnect();
+    }
+  });
+});
