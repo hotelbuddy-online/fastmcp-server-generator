@@ -1,0 +1,179 @@
+/**
+ * Memory Service
+ * Provides in-memory storage for the MCP server
+ */
+
+const NodeCache = require('node-cache');
+const EventEmitter = require('events');
+
+class MemoryService extends EventEmitter {
+  constructor(options = {}) {
+    super();
+    
+    this.options = {
+      stdTTL: 0, // 0 = unlimited
+      checkperiod: 600, // seconds
+      maxKeys: -1, // -1 = unlimited
+      useClones: true,
+      deleteOnExpire: true,
+      ...options
+    };
+    
+    this.cache = new NodeCache(this.options);
+    
+    // Set memory limit if provided
+    if (options.memoryLimit) {
+      this.memoryLimit = options.memoryLimit * 1024 * 1024; // Convert MB to bytes
+    }
+    
+    // Configure shared memory if enabled
+    this.shared = options.shared || {{USE_SHARED_MEMORY}};
+    
+    // Memory usage stats
+    this.stats = {
+      gets: 0,
+      sets: 0,
+      deletes: 0,
+      hits: 0,
+      misses: 0
+    };
+    
+    // Set up cache events
+    this.cache.on('set', (key) => {
+      this.stats.sets++;
+      this.emit('set', key);
+    });
+    
+    this.cache.on('del', (key) => {
+      this.stats.deletes++;
+      this.emit('delete', key);
+    });
+    
+    this.cache.on('expired', (key) => {
+      this.emit('expired', key);
+    });
+  }
+  
+  /**
+   * Store data in memory
+   * @param {string} key - The key to store the data under
+   * @param {any} data - The data to store
+   * @param {number} ttl - Time to live in seconds (optional)
+   * @returns {object} - Operation result
+   */
+  storeData(key, data, ttl = 0) {
+    try {
+      // Check memory limit if set
+      if (this.memoryLimit) {
+        const memUsage = process.memoryUsage().heapUsed;
+        if (memUsage > this.memoryLimit) {
+          return {
+            success: false,
+            error: 'Memory limit exceeded'
+          };
+        }
+      }
+      
+      const success = this.cache.set(key, data, ttl);
+      
+      return {
+        success,
+        key
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+  
+  /**
+   * Retrieve data from memory
+   * @param {string} key - The key to retrieve
+   * @returns {object} - The data and operation result
+   */
+  retrieveData(key) {
+    try {
+      this.stats.gets++;
+      
+      const data = this.cache.get(key);
+      
+      if (data === undefined) {
+        this.stats.misses++;
+        return {
+          success: false,
+          error: 'Key not found'
+        };
+      }
+      
+      this.stats.hits++;
+      
+      return {
+        success: true,
+        data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+  
+  /**
+   * Delete data from memory
+   * @param {string} key - The key to delete
+   * @returns {object} - Operation result
+   */
+  deleteData(key) {
+    try {
+      const count = this.cache.del(key);
+      
+      return {
+        success: count > 0,
+        count
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+  
+  /**
+   * Clear all data from memory
+   * @returns {object} - Operation result
+   */
+  clearAll() {
+    try {
+      this.cache.flushAll();
+      
+      return {
+        success: true
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+  
+  /**
+   * Get memory usage statistics
+   * @returns {object} - Memory stats
+   */
+  getStats() {
+    return {
+      ...this.stats,
+      keys: this.cache.keys(),
+      itemCount: this.cache.getStats().keys,
+      memoryUsage: process.memoryUsage(),
+      cacheStats: this.cache.getStats()
+    };
+  }
+}
+
+module.exports = { MemoryService };
