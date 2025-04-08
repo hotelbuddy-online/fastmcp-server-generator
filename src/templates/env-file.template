@@ -1,0 +1,14 @@
+# Server Configuration
+PORT={{SERVER_PORT}}
+LOG_LEVEL={{LOGGING_LEVEL}}
+
+# Root directory for file operations
+ROOT_DIRECTORY=./data
+
+# Authentication settings
+AUTH_ENABLED=true
+AUTH_SECRET=change_this_to_a_secure_secret
+
+# API settings
+API_RATE_LIMIT=100
+API_TIMEOUT=30000
