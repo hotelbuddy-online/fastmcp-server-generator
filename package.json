@@ -1,0 +1,29 @@
+{
+  "name": "fastmcp-server-generator",
+  "version": "1.0.0",
+  "description": "A specialist MCP server that helps users create custom MCP servers",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "jest"
+  },
+  "keywords": [
+    "mcp",
+    "fastmcp",
+    "server",
+    "generator"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "fastmcp": "^1.0.0",
+    "inquirer": "^8.2.5",
+    "fs-extra": "^11.1.1",
+    "chalk": "^4.1.2",
+    "dotenv": "^16.0.3",
+    "winston": "^3.8.2"
+  },
+  "devDependencies": {
+    "jest": "^29.5.0"
+  }
+}
