@@ -1,0 +1,119 @@
+/**
+ * {{SERVER_NAME}}
+ * MCP Server generated with FastMCP Server Generator
+ */
+
+const fastmcp = require('fastmcp');
+const winston = require('winston');
+const dotenv = require('dotenv');
+
+// Load environment variables
+dotenv.config();
+
+{{IMPORTS}}
+
+class MCPServer {
+  constructor() {
+    this.server = null;
+    this.initLogger();
+  }
+
+  initLogger() {
+    this.logger = winston.createLogger({
+      level: process.env.LOG_LEVEL || 'info',
+      format: winston.format.combine(
+        winston.format.timestamp(),
+        winston.format.printf(({ level, message, timestamp }) => {
+          return `${timestamp} ${level.toUpperCase()}: ${message}`;
+        })
+      ),
+      transports: [
+        new winston.transports.Console({
+          format: winston.format.combine(
+            winston.format.colorize(),
+            winston.format.simple()
+          )
+        }),
+        new winston.transports.File({ 
+          filename: 'logs/error.log', 
+          level: 'error' 
+        }),
+        new winston.transports.File({ 
+          filename: 'logs/combined.log' 
+        })
+      ]
+    });
+  }
+
+  async initialize() {
+    this.logger.info('Initializing {{SERVER_NAME}}...');
+    
+    // Create the FastMCP server instance
+    this.server = new fastmcp.Server({
+      name: '{{SERVER_NAME}}',
+      port: process.env.PORT || {{SERVER_PORT}},
+      authentication: {{USE_AUTHENTICATION}}
+    });
+    
+    // Register services
+{{SERVICE_REGISTRATIONS}}
+    
+    // Register commands
+{{COMMAND_REGISTRATIONS}}
+    
+    this.logger.info('Server initialized');
+  }
+
+  async start() {
+    this.logger.info('Starting server...');
+    
+    try {
+      await this.server.start();
+      
+      const address = this.server.getAddress();
+      this.logger.info(`Server listening on ${address.address}:${address.port}`);
+    } catch (error) {
+      this.logger.error(`Failed to start server: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async stop() {
+    this.logger.info('Stopping server...');
+    
+    try {
+      await this.server.stop();
+      this.logger.info('Server stopped');
+    } catch (error) {
+      this.logger.error(`Failed to stop server: ${error.message}`);
+      throw error;
+    }
+  }
+}
+
+// Create and start the server
+async function main() {
+  const server = new MCPServer();
+  
+  try {
+    await server.initialize();
+    await server.start();
+    
+    // Handle graceful shutdown
+    process.on('SIGINT', async () => {
+      await server.stop();
+      process.exit(0);
+    });
+    
+    process.on('SIGTERM', async () => {
+      await server.stop();
+      process.exit(0);
+    });
+  } catch (error) {
+    console.error(`Failed to start server: ${error.message}`);
+    process.exit(1);
+  }
+}
+
+// Start the server
+main();
